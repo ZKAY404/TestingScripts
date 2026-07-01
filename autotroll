@@ -157,10 +157,6 @@ local function do_sequence()
             end
         end
     end)
-
-    vim:SendKeyEvent(true, Enum.KeyCode.One, false, game)
-    task.wait(0.001)
-    vim:SendKeyEvent(false, Enum.KeyCode.One, false, game)
     print("[Script] Pressed Num 1 on start")
 end
 
@@ -392,6 +388,9 @@ end)
 
 -- auto start if getgenv set
 if getgenv().Running and getgenv().Target then
+    vim:SendKeyEvent(true, Enum.KeyCode.One, false, game)
+    task.wait(0.001)
+    vim:SendKeyEvent(false, Enum.KeyCode.One, false, game)
     selected_target = getgenv().Target
     dropdown_btn.Text = selected_target
     is_running = true
