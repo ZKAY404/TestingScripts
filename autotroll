@@ -131,7 +131,7 @@ local function do_sequence()
             env.sethiddenproperty(cur_root, "PhysicsRepRootPart", cur_target_root)
         end
 
-        if elapsed >= 5 then
+        if elapsed >= 7 then
             sequence_conn:Disconnect()
             sequence_conn = nil
 
@@ -150,7 +150,6 @@ local function do_sequence()
                         getgenv().Target = %q
                         getgenv().Running = true
                         repeat wait() until game:IsLoaded() and game.Players.LocalPlayer
-                        loadstring(game:HttpGet("https://raw.githubusercontent.com/ZKAY404/TestingScripts/refs/heads/main/autotroll"))()
                     ]], selected_target))
                 end
                 teleport_service:TeleportToPlaceInstance(game.PlaceId, game.JobId, local_player)
@@ -388,7 +387,7 @@ end)
 
 -- auto start if getgenv set
 if getgenv().Running and getgenv().Target then
-    task.wait(0.2)
+    task.wait(1.1)
     vim:SendKeyEvent(true, Enum.KeyCode.One, false, game)
     task.wait(0.001)
     vim:SendKeyEvent(false, Enum.KeyCode.One, false, game)
