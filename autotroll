@@ -1,0 +1,404 @@
+local players = game:GetService("Players")
+local run_service = game:GetService("RunService")
+local vim = game:GetService("VirtualInputManager")
+local teleport_service = game:GetService("TeleportService")
+local local_player = players.LocalPlayer
+local env = getfenv and getfenv() or {}
+
+local is_voiding = false
+local offset_x = 0
+local offset_y = 0
+local offset_z = 5
+local rotate_as_target = true
+local is_running = false
+local selected_target = getgenv().Target or nil
+local sequence_conn = nil
+
+local queueteleport = queue_on_teleport or (syn and syn.queue_on_teleport) or (fluxus and fluxus.queue_on_teleport)
+
+local function compute_goal_cframe(target_root)
+    local target_cf = target_root.CFrame
+    local offset_cf = target_cf * CFrame.new(offset_x, offset_y, offset_z)
+    local offset_pos = offset_cf.Position
+
+    if rotate_as_target then
+        return CFrame.new(offset_pos) * target_cf.Rotation
+    else
+        local dist = (offset_pos - target_cf.Position).Magnitude
+        if dist < 0.01 then
+            return CFrame.new(offset_pos) * target_cf.Rotation
+        else
+            return CFrame.lookAt(offset_pos, target_cf.Position)
+        end
+    end
+end
+
+local function get_target_char()
+    if not selected_target then return nil end
+    local player = players:FindFirstChild(selected_target)
+    if player and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+        return player.Character
+    end
+    return nil
+end
+
+local function stop_sequence()
+    is_running = false
+    if sequence_conn then
+        sequence_conn:Disconnect()
+        sequence_conn = nil
+    end
+    local char = local_player.Character
+    if char then
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if hum then
+            hum.AutoRotate = true
+            if env.sethiddenproperty then
+                env.sethiddenproperty(hum, "PlatformStand", false)
+            else
+                hum.PlatformStand = false
+            end
+            hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+        end
+        if root then
+            root.AssemblyLinearVelocity = Vector3.zero
+            root.AssemblyAngularVelocity = Vector3.zero
+        end
+    end
+end
+
+local function do_sequence()
+    if not is_running then return end
+
+    local char = local_player.Character
+    if not char then return end
+
+    local root = char:FindFirstChild("HumanoidRootPart")
+    local torso = char:FindFirstChild("Torso")
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not root or not torso or not hum then return end
+
+    local target = get_target_char()
+    if not target then
+        warn("[Script] No target found: " .. tostring(selected_target))
+        return
+    end
+
+    print("[Script] Starting sequence on: " .. target.Name)
+
+    hum.AutoRotate = false
+    if env.sethiddenproperty then
+        env.sethiddenproperty(hum, "PlatformStand", true)
+    else
+        hum.PlatformStand = true
+    end
+
+    local elapsed = 0
+    sequence_conn = run_service.Heartbeat:Connect(function(dt)
+        if not is_running then
+            sequence_conn:Disconnect()
+            sequence_conn = nil
+            return
+        end
+
+        elapsed = elapsed + dt
+
+        local cur_char = local_player.Character
+        if not cur_char then sequence_conn:Disconnect() sequence_conn = nil return end
+        local cur_root = cur_char:FindFirstChild("HumanoidRootPart")
+        local cur_torso = cur_char:FindFirstChild("Torso")
+        local cur_hum = cur_char:FindFirstChildOfClass("Humanoid")
+        local cur_target_root = target:FindFirstChild("HumanoidRootPart")
+        if not cur_root or not cur_torso or not cur_hum or not cur_target_root then
+            sequence_conn:Disconnect()
+            sequence_conn = nil
+            return
+        end
+
+        if env.sethiddenproperty then
+            env.sethiddenproperty(cur_hum, "PlatformStand", true)
+        end
+
+        local goal_cf = compute_goal_cframe(cur_target_root)
+        cur_torso.CFrame = goal_cf
+        cur_root.AssemblyLinearVelocity = Vector3.zero
+        cur_root.AssemblyAngularVelocity = Vector3.zero
+
+        pcall(function() cur_hum:Move(Vector3.zero) end)
+
+        if env.sethiddenproperty then
+            env.sethiddenproperty(cur_root, "PhysicsRepRootPart", cur_target_root)
+        end
+
+        if elapsed >= 5 then
+            sequence_conn:Disconnect()
+            sequence_conn = nil
+
+            -- press num 1
+            vim:SendKeyEvent(true, Enum.KeyCode.One, false, game)
+            task.wait(0.001)
+            vim:SendKeyEvent(false, Enum.KeyCode.One, false, game)
+            print("[Script] Pressed Num 1")
+
+            task.wait(0.5)
+
+            if is_running then
+                print("[Script] Rejoining...")
+                if queueteleport then
+                    queueteleport(string.format([[
+                        getgenv().Target = %q
+                        getgenv().Running = true
+                        repeat wait() until game:IsLoaded() and game.Players.LocalPlayer
+                        loadstring(game:HttpGet("https://raw.githubusercontent.com/ZKAY404/ZKAYHub/refs/heads/main/LoopTP"))()
+                    ]], selected_target))
+                end
+                teleport_service:Teleport(game.PlaceId, local_player)
+            end
+        end
+    end)
+
+    vim:SendKeyEvent(true, Enum.KeyCode.One, false, game)
+    task.wait(0.001)
+    vim:SendKeyEvent(false, Enum.KeyCode.One, false, game)
+    print("[Script] Pressed Num 1 on start")
+end
+
+-- // UI
+local screen_gui = Instance.new("ScreenGui")
+screen_gui.Name = "LoopTPUI"
+screen_gui.Parent = game.CoreGui
+screen_gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screen_gui.ResetOnSpawn = false
+screen_gui.DisplayOrder = 999
+
+local main_frame = Instance.new("Frame")
+main_frame.Parent = screen_gui
+main_frame.BackgroundColor3 = Color3.fromRGB(16, 16, 22)
+main_frame.BorderSizePixel = 0
+main_frame.Position = UDim2.new(0.5, -175, 0.5, -120)
+main_frame.Size = UDim2.new(0, 350, 0, 240)
+main_frame.Active = true
+main_frame.Draggable = true
+Instance.new("UICorner", main_frame).CornerRadius = UDim.new(0, 8)
+
+local title_bar = Instance.new("Frame")
+title_bar.Parent = main_frame
+title_bar.BackgroundColor3 = Color3.fromRGB(22, 22, 32)
+title_bar.BorderSizePixel = 0
+title_bar.Size = UDim2.new(1, 0, 0, 38)
+Instance.new("UICorner", title_bar).CornerRadius = UDim.new(0, 8)
+
+local title_label = Instance.new("TextLabel")
+title_label.Parent = title_bar
+title_label.BackgroundTransparency = 1
+title_label.Position = UDim2.new(0, 12, 0, 0)
+title_label.Size = UDim2.new(1, -12, 1, 0)
+title_label.Font = Enum.Font.GothamBold
+title_label.Text = "ZKAY LoopTP Rejoin"
+title_label.TextColor3 = Color3.fromRGB(210, 210, 255)
+title_label.TextSize = 15
+title_label.TextXAlignment = Enum.TextXAlignment.Left
+
+local accent_bar = Instance.new("Frame")
+accent_bar.Parent = main_frame
+accent_bar.BackgroundColor3 = Color3.fromRGB(90, 90, 255)
+accent_bar.BorderSizePixel = 0
+accent_bar.Position = UDim2.new(0, 0, 0, 38)
+accent_bar.Size = UDim2.new(1, 0, 0, 2)
+
+local dropdown_label = Instance.new("TextLabel")
+dropdown_label.Parent = main_frame
+dropdown_label.BackgroundTransparency = 1
+dropdown_label.Position = UDim2.new(0, 12, 0, 50)
+dropdown_label.Size = UDim2.new(1, -24, 0, 16)
+dropdown_label.Font = Enum.Font.Gotham
+dropdown_label.Text = "Target (workspace.Live)"
+dropdown_label.TextColor3 = Color3.fromRGB(160, 160, 200)
+dropdown_label.TextSize = 11
+dropdown_label.TextXAlignment = Enum.TextXAlignment.Left
+
+local dropdown_btn = Instance.new("TextButton")
+dropdown_btn.Parent = main_frame
+dropdown_btn.BackgroundColor3 = Color3.fromRGB(28, 28, 42)
+dropdown_btn.BorderSizePixel = 0
+dropdown_btn.Position = UDim2.new(0, 12, 0, 68)
+dropdown_btn.Size = UDim2.new(1, -24, 0, 30)
+dropdown_btn.Font = Enum.Font.Gotham
+dropdown_btn.Text = selected_target or "Select Target..."
+dropdown_btn.TextColor3 = Color3.fromRGB(200, 200, 255)
+dropdown_btn.TextSize = 12
+dropdown_btn.ZIndex = 2
+Instance.new("UICorner", dropdown_btn).CornerRadius = UDim.new(0, 5)
+
+local dropdown_arrow = Instance.new("TextLabel")
+dropdown_arrow.Parent = dropdown_btn
+dropdown_arrow.BackgroundTransparency = 1
+dropdown_arrow.Position = UDim2.new(1, -24, 0, 0)
+dropdown_arrow.Size = UDim2.new(0, 20, 1, 0)
+dropdown_arrow.Font = Enum.Font.GothamBold
+dropdown_arrow.Text = "▾"
+dropdown_arrow.TextColor3 = Color3.fromRGB(150, 150, 200)
+dropdown_arrow.TextSize = 14
+dropdown_arrow.ZIndex = 2
+
+local dropdown_frame = Instance.new("Frame")
+dropdown_frame.Parent = main_frame
+dropdown_frame.BackgroundColor3 = Color3.fromRGB(24, 24, 36)
+dropdown_frame.BorderSizePixel = 0
+dropdown_frame.Position = UDim2.new(0, 12, 0, 100)
+dropdown_frame.Size = UDim2.new(1, -24, 0, 0)
+dropdown_frame.ClipsDescendants = true
+dropdown_frame.ZIndex = 10
+dropdown_frame.Visible = false
+Instance.new("UICorner", dropdown_frame).CornerRadius = UDim.new(0, 5)
+
+local dropdown_scroll = Instance.new("ScrollingFrame")
+dropdown_scroll.Parent = dropdown_frame
+dropdown_scroll.BackgroundTransparency = 1
+dropdown_scroll.BorderSizePixel = 0
+dropdown_scroll.Size = UDim2.new(1, 0, 1, 0)
+dropdown_scroll.ScrollBarThickness = 3
+dropdown_scroll.ScrollBarImageColor3 = Color3.fromRGB(90, 90, 180)
+dropdown_scroll.ZIndex = 10
+dropdown_scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+
+local dropdown_layout = Instance.new("UIListLayout")
+dropdown_layout.Parent = dropdown_scroll
+dropdown_layout.SortOrder = Enum.SortOrder.LayoutOrder
+dropdown_layout.Padding = UDim.new(0, 2)
+
+local dropdown_padding = Instance.new("UIPadding")
+dropdown_padding.Parent = dropdown_scroll
+dropdown_padding.PaddingTop = UDim.new(0, 4)
+dropdown_padding.PaddingBottom = UDim.new(0, 4)
+dropdown_padding.PaddingLeft = UDim.new(0, 4)
+dropdown_padding.PaddingRight = UDim.new(0, 4)
+
+local dropdown_open = false
+local MAX_DROPDOWN_HEIGHT = 120
+local ITEM_HEIGHT = 28
+
+local function close_dropdown()
+    dropdown_open = false
+    dropdown_frame.Visible = false
+    dropdown_arrow.Text = "▾"
+end
+
+local function populate_dropdown()
+    for _, child in ipairs(dropdown_scroll:GetChildren()) do
+        if child:IsA("TextButton") then child:Destroy() end
+    end
+    local count = 0
+    for _, player in ipairs(players:GetPlayers()) do
+        if player ~= local_player then
+            count = count + 1
+            local item = Instance.new("TextButton")
+            item.BackgroundColor3 = Color3.fromRGB(36, 36, 52)
+            item.BorderSizePixel = 0
+            item.Size = UDim2.new(1, 0, 0, ITEM_HEIGHT)
+            item.Font = Enum.Font.Gotham
+            item.Text = player.Name
+            item.TextColor3 = Color3.fromRGB(200, 200, 240)
+            item.TextSize = 12
+            item.ZIndex = 11
+            item.LayoutOrder = count
+            item.Parent = dropdown_scroll
+            Instance.new("UICorner", item).CornerRadius = UDim.new(0, 4)
+            item.MouseEnter:Connect(function() item.BackgroundColor3 = Color3.fromRGB(60, 60, 90) end)
+            item.MouseLeave:Connect(function() item.BackgroundColor3 = Color3.fromRGB(36, 36, 52) end)
+            item.MouseButton1Click:Connect(function()
+                selected_target = player.Name
+                getgenv().Target = selected_target
+                dropdown_btn.Text = player.Name
+                close_dropdown()
+            end)
+        end
+    end
+    local total_height = (count * (ITEM_HEIGHT + 2)) + 8
+    dropdown_scroll.CanvasSize = UDim2.new(0, 0, 0, total_height)
+    dropdown_frame.Size = UDim2.new(1, -24, 0, math.min(total_height, MAX_DROPDOWN_HEIGHT))
+end
+
+dropdown_btn.MouseButton1Click:Connect(function()
+    if dropdown_open then close_dropdown()
+    else
+        populate_dropdown()
+        dropdown_frame.Visible = true
+        dropdown_open = true
+        dropdown_arrow.Text = "▴"
+    end
+end)
+
+local toggle_btn = Instance.new("TextButton")
+toggle_btn.Parent = main_frame
+toggle_btn.BorderSizePixel = 0
+toggle_btn.Position = UDim2.new(0, 12, 0, 158)
+toggle_btn.Size = UDim2.new(1, -24, 0, 36)
+toggle_btn.Font = Enum.Font.GothamBold
+toggle_btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggle_btn.TextSize = 14
+Instance.new("UICorner", toggle_btn).CornerRadius = UDim.new(0, 6)
+
+local status_label = Instance.new("TextLabel")
+status_label.Parent = main_frame
+status_label.BackgroundTransparency = 1
+status_label.Position = UDim2.new(0, 12, 0, 202)
+status_label.Size = UDim2.new(1, -24, 0, 16)
+status_label.Font = Enum.Font.Gotham
+status_label.Text = "● Idle"
+status_label.TextColor3 = Color3.fromRGB(130, 130, 160)
+status_label.TextSize = 11
+status_label.TextXAlignment = Enum.TextXAlignment.Left
+
+local function update_toggle_btn()
+    if is_running then
+        toggle_btn.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
+        toggle_btn.Text = "■  Stop"
+    else
+        toggle_btn.BackgroundColor3 = Color3.fromRGB(40, 160, 80)
+        toggle_btn.Text = "▶  Start"
+    end
+end
+
+update_toggle_btn()
+
+toggle_btn.MouseButton1Click:Connect(function()
+    close_dropdown()
+    if is_running then
+        stop_sequence()
+        update_toggle_btn()
+        status_label.Text = "● Stopped"
+        status_label.TextColor3 = Color3.fromRGB(255, 80, 80)
+    else
+        if not selected_target then
+            status_label.Text = "● No target selected"
+            status_label.TextColor3 = Color3.fromRGB(255, 180, 80)
+            return
+        end
+        is_running = true
+        getgenv().Running = true
+        update_toggle_btn()
+        task.spawn(do_sequence)
+    end
+end)
+
+run_service.Heartbeat:Connect(function()
+    if is_running and selected_target then
+        status_label.Text = "● Running: " .. selected_target
+        status_label.TextColor3 = Color3.fromRGB(80, 220, 120)
+    end
+end)
+
+-- auto start if getgenv set
+if getgenv().Running and getgenv().Target then
+    selected_target = getgenv().Target
+    dropdown_btn.Text = selected_target
+    is_running = true
+    update_toggle_btn()
+    task.wait(1)
+    task.spawn(do_sequence)
+    print("[Script] Auto started with target: " .. selected_target)
+end
+
+print("[LoopTP Rejoin] Loaded")
