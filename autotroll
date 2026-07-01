@@ -153,7 +153,7 @@ local function do_sequence()
                         loadstring(game:HttpGet("https://raw.githubusercontent.com/ZKAY404/TestingScripts/refs/heads/main/autotroll"))()
                     ]], selected_target))
                 end
-                TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, local_player)
+                teleport_service:TeleportToPlaceInstance(game.PlaceId, game.JobId, local_player)
             end
         end
     end)
