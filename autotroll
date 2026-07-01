@@ -388,6 +388,7 @@ end)
 
 -- auto start if getgenv set
 if getgenv().Running and getgenv().Target then
+    task.wait(0.2)
     vim:SendKeyEvent(true, Enum.KeyCode.One, false, game)
     task.wait(0.001)
     vim:SendKeyEvent(false, Enum.KeyCode.One, false, game)
